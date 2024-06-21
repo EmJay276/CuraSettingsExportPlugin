@@ -1,7 +1,7 @@
 {
   "name": "Settings Exporter",
   "author": "Michael Jäger",
-  "version": "1.0",
+  "version": "1.0.0",
   "api": 6,
   "supported_sdk_versions": [
     "5.0.0",
@@ -9,5 +9,5 @@
     "7.0.0",
     "8.0.0"
   ],
-  "description": "Exports all current settings to a json."
+  "description": "Exports all current settings of Cura and some metadata to a JSON file. \nThis allows profiles from cura being exported and used via Command Line Interface with the CuraEngine."
 }
