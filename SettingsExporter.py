@@ -1,10 +1,15 @@
 import json
+from copy import deepcopy
+from typing import Any, Dict, TYPE_CHECKING, Tuple
 
 from UM.Extension import Extension
 from UM.Logger import Logger
 from UM.i18n import i18nCatalog
 from cura.CuraApplication import CuraApplication
 from cura.Settings.CuraContainerStack import _ContainerIndexes
+
+if TYPE_CHECKING:
+    from cura.Settings.CuraContainerStack import CuraContainerStack
 
 catalog = i18nCatalog("calibration")
 
@@ -30,48 +35,52 @@ class SettingsExporter(QObject, Extension):
         self.addMenuItem(catalog.i18nc("@item:inmenu", "Export settings"), self.export)
 
     def export(self):
-        # get global stakc containing all settings
-        global_stack = CuraApplication.getInstance().getGlobalContainerStack()
+        # get global stack containing all settings
+        global_stack: CuraContainerStack = CuraApplication.getInstance().getGlobalContainerStack()
         Logger.log("d", "Retrieving metadata and settings ...")
 
         # dict to save all settings
         settings = {"metadata": {},
                     "settings": {}}
 
+        ########################################################################
+        # Machine metadata
+        ########################################################################
         # add metadata for global_stack (= "machine")
         global_stack_type = global_stack.getMetaDataEntry("type")
-        settings["metadata"][global_stack_type] = global_stack.getMetaData()
+        settings["metadata"][global_stack_type] = deepcopy(global_stack.getMetaData())
         for key, value in settings["metadata"][global_stack_type].items():
             # convert all metadata to string
             settings["metadata"][global_stack_type][key] = str(value)
 
-        # get all setting keys
-        all_setting_keys = global_stack.getAllKeys()
+        ########################################################################
+        # Extruder container stacks
+        ########################################################################
+        # get extruders
+        extruder_list = global_stack.extruderList
 
-        # add resolved settings to "all_settings" key
-        settings["settings"]["all_settings"] = {}
-        for key in all_setting_keys:
-            settings["settings"]["all_settings"][key] = global_stack.getProperty(key, "value")
+        # add metadata and settings for each extruder
+        settings["settings"]["extruders"] = {}
+        settings["metadata"]["extruders"] = {}
 
-        # loop over all containers in the global stack to get the individual settings
-        for index, name in _ContainerIndexes.IndexTypeMap.items():
-            # get the current container
-            container = global_stack.getContainer(index)
+        for i, extruder_stack in enumerate(extruder_list):
+            metadata_dict, settings_dict = self.get_stack_data(extruder_stack)
+            settings["metadata"]["extruders"][str(i)] = metadata_dict
+            settings["settings"]["extruders"][str(i)] = settings_dict
 
-            # add metadata of this container
-            settings["metadata"][name] = container.getMetaData()
-            for key, value in settings["metadata"][name].items():
-                # convert all metadata to string
-                settings["metadata"][name][key] = str(value)
-
-            # dict to save container settings
-            settings["settings"][name] = {}
-            # loop over all container settings
-            for key in container.getAllKeys():
-                # save settings with name and value in tmp dict
-                settings["settings"][name][key] = str(container.getProperty(key, 'value'))
+        ########################################################################
+        # Global container stack
+        ########################################################################
+        # get data from global container stack
+        metadata_dict, settings_dict = self.get_stack_data(global_stack)
+        settings["metadata"]["global"] = metadata_dict
+        settings["settings"]["global"] = settings_dict
 
         Logger.log("d", "Export all settings to .json file ...")
+
+        ########################################################################
+        # Export as JSON
+        ########################################################################
 
         file_name, _ = QFileDialog.getSaveFileName(None, "Save File", "", "JSON (*.json;)")
         if file_name:
@@ -84,3 +93,42 @@ class SettingsExporter(QObject, Extension):
                     return
 
         Logger.log("d", f"Settings exported to: {file_name}")
+
+    def get_stack_data(self, container_stack: "CuraContainerStack") -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Get all data from this container stack and return it as a dictionary for metadata and settings.
+
+        Args:
+            container_stack (CuraContainerStack): A CuraContainerStack to unroll settings from
+
+        Returns:
+            dict: metadata
+            dict: settings
+
+        """
+        metadata = {}
+        settings = {"all": {}}
+
+        # all data from this stack
+        for key in container_stack.getAllKeys():
+            settings["all"][key] = container_stack.getProperty(key, "value")
+
+        # all containers inside the stack
+        for i, container in enumerate(container_stack.getContainers()):
+            # get the current container
+            name = _ContainerIndexes.IndexTypeMap[i]
+
+            # add metadata of this container
+            metadata[name] = deepcopy(container.getMetaData())
+            for key, value in metadata[name].items():
+                # convert all metadata to string
+                metadata[name][key] = str(value)
+
+            # dict to save container settings
+            settings[name] = {}
+            # loop over all container settings
+            for key in container.getAllKeys():
+                # save settings with name and value in tmp dict
+                settings[name][key] = str(container.getProperty(key, 'value'))
+
+        return metadata, settings
