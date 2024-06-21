@@ -6,6 +6,7 @@ from UM.Extension import Extension
 from UM.Logger import Logger
 from UM.i18n import i18nCatalog
 from cura.CuraApplication import CuraApplication
+from cura.Settings.CuraContainerStack import CuraContainerStack, _ContainerIndexes
 
 if TYPE_CHECKING:
     from cura.Settings.CuraContainerStack import CuraContainerStack
@@ -40,16 +41,10 @@ class SettingsExporter(QObject, Extension):
         Logger.log("d", "Retrieving metadata and settings ...")
 
         # dict to save all settings
-        settings = {"metadata": {},
-                    "settings": {}}
-
-        ########################################################################
-        # Machine metadata
-        ########################################################################
-        # get the current type and metadata of the global stack
-        container_type, metadata = self.get_container_metadata(global_stack)
-        # add metadata of the global stack
-        settings["metadata"][container_type] = metadata
+        settings = {"metadata": {"global"   : {},
+                                 "extruders": {}},
+                    "settings": {"global"   : {},
+                                 "extruders": {}}}
 
         ########################################################################
         # Extruder stacks
@@ -58,16 +53,7 @@ class SettingsExporter(QObject, Extension):
         extruder_list = global_stack.extruderList
 
         # add metadata and settings for each extruder
-        settings["settings"]["extruders"] = {}
-        settings["metadata"]["extruders"] = {}
-
         for i, extruder_stack in enumerate(extruder_list):
-            settings["metadata"]["extruders"][str(i)] = {}
-            # get the current type and metadata for the extruder_stack
-            container_type, metadata = self.get_container_metadata(extruder_stack)
-            # add metadata of the extruder_stack
-            settings["metadata"]["extruders"][str(i)] = metadata
-
             metadata_dict, settings_dict = self.get_stack_data(extruder_stack)
             settings["metadata"]["extruders"][str(i)] = metadata_dict
             settings["settings"]["extruders"][str(i)] = settings_dict
@@ -117,10 +103,19 @@ class SettingsExporter(QObject, Extension):
         for key in container_stack.getAllKeys():
             settings["all"][key] = container_stack.getProperty(key, "value")
 
+        # get the current type and metadata for the container_stack
+        stack_type, stack_metadata = self.get_container_metadata(container_stack)
+        # add metadata of the container_stack
+        metadata[stack_type] = stack_metadata
+
         # all containers inside the stack
         for i, container in enumerate(container_stack.getContainers()):
+            # get container type
+            # this is not done by "self.get_container_metadata" to avoid "definition" being called "extruder" for
+            # extruders and "machine" for the global stack
+            container_type = _ContainerIndexes.IndexTypeMap[i]
             # get the current type and metadata
-            container_type, container_metadata = self.get_container_metadata(container)
+            _, container_metadata = self.get_container_metadata(container)
             # add metadata of this container
             metadata[container_type] = container_metadata
 
@@ -149,7 +144,7 @@ class SettingsExporter(QObject, Extension):
 
         metadata = deepcopy(container.getMetaData())
         for key, value in metadata.items():
-            # convert all metadata to string
+            # convert all metadata to string to ensure json serializability
             metadata[key] = str(value)
 
         return container_type, metadata
