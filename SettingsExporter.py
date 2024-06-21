@@ -6,10 +6,10 @@ from UM.Extension import Extension
 from UM.Logger import Logger
 from UM.i18n import i18nCatalog
 from cura.CuraApplication import CuraApplication
-from cura.Settings.CuraContainerStack import _ContainerIndexes
 
 if TYPE_CHECKING:
     from cura.Settings.CuraContainerStack import CuraContainerStack
+    from UM.Settings.Interfaces import ContainerInterface
 
 catalog = i18nCatalog("calibration")
 
@@ -46,15 +46,13 @@ class SettingsExporter(QObject, Extension):
         ########################################################################
         # Machine metadata
         ########################################################################
-        # add metadata for global_stack (= "machine")
-        global_stack_type = global_stack.getMetaDataEntry("type")
-        settings["metadata"][global_stack_type] = deepcopy(global_stack.getMetaData())
-        for key, value in settings["metadata"][global_stack_type].items():
-            # convert all metadata to string
-            settings["metadata"][global_stack_type][key] = str(value)
+        # get the current type and metadata of the global stack
+        container_type, metadata = self.get_container_metadata(global_stack)
+        # add metadata of the global stack
+        settings["metadata"][container_type] = metadata
 
         ########################################################################
-        # Extruder container stacks
+        # Extruder stacks
         ########################################################################
         # get extruders
         extruder_list = global_stack.extruderList
@@ -64,6 +62,12 @@ class SettingsExporter(QObject, Extension):
         settings["metadata"]["extruders"] = {}
 
         for i, extruder_stack in enumerate(extruder_list):
+            settings["metadata"]["extruders"][str(i)] = {}
+            # get the current type and metadata for the extruder_stack
+            container_type, metadata = self.get_container_metadata(extruder_stack)
+            # add metadata of the extruder_stack
+            settings["metadata"]["extruders"][str(i)] = metadata
+
             metadata_dict, settings_dict = self.get_stack_data(extruder_stack)
             settings["metadata"]["extruders"][str(i)] = metadata_dict
             settings["settings"]["extruders"][str(i)] = settings_dict
@@ -115,20 +119,37 @@ class SettingsExporter(QObject, Extension):
 
         # all containers inside the stack
         for i, container in enumerate(container_stack.getContainers()):
-            # get the current container
-            name = _ContainerIndexes.IndexTypeMap[i]
-
+            # get the current type and metadata
+            container_type, container_metadata = self.get_container_metadata(container)
             # add metadata of this container
-            metadata[name] = deepcopy(container.getMetaData())
-            for key, value in metadata[name].items():
-                # convert all metadata to string
-                metadata[name][key] = str(value)
+            metadata[container_type] = container_metadata
 
             # dict to save container settings
-            settings[name] = {}
+            settings[container_type] = {}
             # loop over all container settings
             for key in container.getAllKeys():
                 # save settings with name and value in tmp dict
-                settings[name][key] = str(container.getProperty(key, 'value'))
+                settings[container_type][key] = str(container.getProperty(key, 'value'))
 
         return metadata, settings
+
+    def get_container_metadata(self, container: "ContainerInterface") -> Tuple[str, Dict[str, Any]]:
+        """
+        Get all metadata from this container and return it as a dictionary.
+
+        Args:
+            container (ContainerInterface): container to get the metadata from
+
+        Returns:
+            str: container_type
+            dict: metadata
+
+        """
+        container_type = container.getMetaDataEntry("type")
+
+        metadata = deepcopy(container.getMetaData())
+        for key, value in metadata.items():
+            # convert all metadata to string
+            metadata[key] = str(value)
+
+        return container_type, metadata
